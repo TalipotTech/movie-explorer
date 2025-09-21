@@ -4,7 +4,7 @@ import { movieApi } from '@/lib/movieApi';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Star, Calendar, Clock, Globe } from '@phosphor-icons/react';
+import { ArrowLeft, Star, Calendar, Clock, Globe, Warning } from '@phosphor-icons/react';
 
 interface MovieDetailsViewProps {
   imdbID: string;
@@ -26,10 +26,11 @@ export function MovieDetailsView({ imdbID, onBack }: MovieDetailsViewProps) {
         if (details) {
           setMovie(details);
         } else {
-          setError('Movie details not found');
+          setError('Movie details not found or unavailable');
         }
       } catch (err) {
-        setError('Failed to load movie details');
+        console.error('Error fetching movie details:', err);
+        setError('Failed to load movie details. Please check your connection and try again.');
       } finally {
         setIsLoading(false);
       }
@@ -70,15 +71,22 @@ export function MovieDetailsView({ imdbID, onBack }: MovieDetailsViewProps) {
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Search
         </Button>
-        <Card className="p-8 text-center">
-          <p className="text-muted-foreground">{error || 'Movie not found'}</p>
+        <Card className="p-8 text-center border-destructive/20 bg-destructive/5">
+          <Warning className="w-12 h-12 text-destructive mx-auto mb-4" />
+          <h3 className="font-semibold text-destructive mb-2">Unable to Load Movie Details</h3>
+          <p className="text-muted-foreground mb-4">{error || 'Movie not found'}</p>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
         </Card>
       </div>
     );
   }
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.src = '/api/placeholder/400/600';
+    // Create a simple placeholder SVG data URL
+    const placeholderSvg = `data:image/svg+xml,${encodeURIComponent(`<svg width="400" height="600" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="600" fill="#2a2a2a"/><text x="200" y="280" text-anchor="middle" fill="#666" font-family="Arial" font-size="16">No Image</text><text x="200" y="320" text-anchor="middle" fill="#666" font-family="Arial" font-size="16">Available</text></svg>`)}`;
+    e.currentTarget.src = placeholderSvg;
   };
 
   return (
@@ -91,7 +99,7 @@ export function MovieDetailsView({ imdbID, onBack }: MovieDetailsViewProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-1">
           <img
-            src={movie.Poster !== 'N/A' ? movie.Poster : '/api/placeholder/400/600'}
+            src={movie.Poster !== 'N/A' ? movie.Poster : `data:image/svg+xml,${encodeURIComponent(`<svg width="400" height="600" xmlns="http://www.w3.org/2000/svg"><rect width="400" height="600" fill="#2a2a2a"/><text x="200" y="280" text-anchor="middle" fill="#666" font-family="Arial" font-size="16">No Image</text><text x="200" y="320" text-anchor="middle" fill="#666" font-family="Arial" font-size="16">Available</text></svg>`)}`}
             alt={movie.Title}
             onError={handleImageError}
             className="w-full rounded-lg shadow-lg"

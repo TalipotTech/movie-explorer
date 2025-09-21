@@ -7,8 +7,9 @@ import { MovieGrid } from '@/components/MovieGrid';
 import { MovieDetailsView } from '@/components/MovieDetailsView';
 import { MovieFilters as MovieFiltersComponent } from '@/components/MovieFilters';
 import { FilterProgress } from '@/components/FilterProgress';
+import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { Card } from '@/components/ui/card';
-import { FilmStrip, MagnifyingGlass } from '@phosphor-icons/react';
+import { FilmStrip, MagnifyingGlass, Warning } from '@phosphor-icons/react';
 
 function App() {
   const [allMovies, setAllMovies] = useState<Movie[]>([]);
@@ -20,6 +21,8 @@ function App() {
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showConnectionStatus, setShowConnectionStatus] = useState(false);
+  const [lastSearchQuery, setLastSearchQuery] = useState<string>('');
   const [currentFilters, setCurrentFilters] = useState<MovieFilters>({
     genre: '',
     yearRange: { min: 1900, max: new Date().getFullYear() },
@@ -32,12 +35,15 @@ function App() {
       setFilteredMovies([]);
       setHasSearched(false);
       setError(null);
+      setShowConnectionStatus(false);
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setHasSearched(true);
+    setLastSearchQuery(query);
+    setShowConnectionStatus(false);
 
     try {
       const result = await movieApi.searchMovies(query);
@@ -46,15 +52,28 @@ function App() {
         setAllMovies(result.Search);
         // Apply current filters to new search results
         await applyFilters(result.Search, currentFilters);
+        setShowConnectionStatus(false);
       } else {
         setAllMovies([]);
         setFilteredMovies([]);
         setError(result.Error || 'No movies found');
+        
+        // Show connection status if it looks like a network error
+        if (result.Error && (
+          result.Error.includes('Network') ||
+          result.Error.includes('connection') ||
+          result.Error.includes('timeout') ||
+          result.Error.includes('Failed to fetch')
+        )) {
+          setShowConnectionStatus(true);
+        }
       }
     } catch (err) {
-      setError('Failed to search movies. Please try again.');
+      const errorMessage = 'Failed to search movies. Please check your connection and try again.';
+      setError(errorMessage);
       setAllMovies([]);
       setFilteredMovies([]);
+      setShowConnectionStatus(true);
     } finally {
       setIsLoading(false);
     }
@@ -97,6 +116,12 @@ function App() {
       setFilteredMovies(movies); // Fallback to unfiltered results
     } finally {
       setIsFiltering(false);
+    }
+  };
+
+  const handleRetrySearch = () => {
+    if (lastSearchQuery) {
+      handleSearch(lastSearchQuery);
     }
   };
 
@@ -148,6 +173,11 @@ function App() {
           <SearchBar onSearch={handleSearch} isLoading={isLoading} />
         </div>
 
+        <ConnectionStatus
+          isVisible={showConnectionStatus}
+          onRetry={handleRetrySearch}
+        />
+
         <MovieFiltersComponent
           onFiltersChange={handleFiltersChange}
           isVisible={showFilters}
@@ -171,7 +201,9 @@ function App() {
         )}
 
         {error && hasSearched && !isLoading && (
-          <Card className="p-8 text-center">
+          <Card className="p-8 text-center border-destructive/20 bg-destructive/5 mb-6">
+            <Warning className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h3 className="font-semibold text-destructive mb-2">Search Error</h3>
             <p className="text-muted-foreground">{error}</p>
           </Card>
         )}

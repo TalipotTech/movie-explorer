@@ -8,7 +8,19 @@ interface MovieCardProps {
 
 export function MovieCard({ movie, onClick }: MovieCardProps) {
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    e.currentTarget.src = '/api/placeholder/300/450';
+    // Create a simple placeholder SVG data URL
+    const placeholderSvg = `data:image/svg+xml,${encodeURIComponent(`
+      <svg width="300" height="450" xmlns="http://www.w3.org/2000/svg">
+        <rect width="300" height="450" fill="#2a2a2a"/>
+        <text x="150" y="210" text-anchor="middle" fill="#666" font-family="Arial" font-size="14">
+          No Image
+        </text>
+        <text x="150" y="240" text-anchor="middle" fill="#666" font-family="Arial" font-size="14">
+          Available
+        </text>
+      </svg>
+    `)}`;
+    e.currentTarget.src = placeholderSvg;
   };
 
   return (
@@ -18,7 +30,7 @@ export function MovieCard({ movie, onClick }: MovieCardProps) {
     >
       <div className="aspect-[2/3] relative overflow-hidden">
         <img
-          src={movie.Poster !== 'N/A' ? movie.Poster : '/api/placeholder/300/450'}
+          src={movie.Poster !== 'N/A' ? movie.Poster : `data:image/svg+xml,${encodeURIComponent(`<svg width="300" height="450" xmlns="http://www.w3.org/2000/svg"><rect width="300" height="450" fill="#2a2a2a"/><text x="150" y="210" text-anchor="middle" fill="#666" font-family="Arial" font-size="14">No Image</text><text x="150" y="240" text-anchor="middle" fill="#666" font-family="Arial" font-size="14">Available</text></svg>`)}`}
           alt={movie.Title}
           onError={handleImageError}
           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
