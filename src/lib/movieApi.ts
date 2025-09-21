@@ -30,17 +30,30 @@ const retryFetch = async (url: string, options: RequestInit = {}, maxRetries = 3
   
   for (let i = 0; i <= maxRetries; i++) {
     try {
-      const response = await fetchWithTimeout(url, options);
+      const response = await fetchWithTimeout(url, options, i === 0 ? 10000 : 15000);
       if (response.ok) {
         return response;
       }
+      
+      // Don't retry on client errors (4xx), only server errors (5xx) and network issues
+      if (response.status >= 400 && response.status < 500) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     } catch (error) {
       lastError = error as Error;
+      
+      // Don't retry on certain types of errors
+      if (lastError.name === 'TypeError' && lastError.message.includes('CORS')) {
+        break;
+      }
+      
       if (i === maxRetries) break;
       
-      // Wait before retrying (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      // Wait before retrying (exponential backoff with jitter)
+      const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
   
@@ -80,11 +93,17 @@ export const movieApi = {
       let errorMessage = 'Failed to search movies';
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          errorMessage = 'Request timed out. Please try again.';
-        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Connection timeout. Please check your internet connection and try again.';
+        } else if (error.message.includes('Failed to fetch') || 
+                   error.message.includes('NetworkError') ||
+                   error.message.includes('fetch')) {
           errorMessage = 'Network connection failed. Please check your internet connection.';
         } else if (error.message.includes('CORS')) {
           errorMessage = 'Unable to access movie database. Please try again later.';
+        } else if (error.message.includes('HTTP 5')) {
+          errorMessage = 'Movie database is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('HTTP 4')) {
+          errorMessage = 'Invalid request. Please check your search terms.';
         } else {
           errorMessage = error.message;
         }

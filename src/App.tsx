@@ -2,16 +2,21 @@ import { useState, useEffect } from 'react';
 import { Movie, type MovieFilters } from '@/lib/types';
 import { movieApi } from '@/lib/movieApi';
 import { smartMovieFilter } from '@/lib/movieFilter';
+import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { SearchBar } from '@/components/SearchBar';
 import { MovieGrid } from '@/components/MovieGrid';
 import { MovieDetailsView } from '@/components/MovieDetailsView';
 import { MovieFilters as MovieFiltersComponent } from '@/components/MovieFilters';
 import { FilterProgress } from '@/components/FilterProgress';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
+import { NetworkIndicator } from '@/components/NetworkIndicator';
+import { OfflineNotice } from '@/components/OfflineNotice';
+import { NetworkErrorBoundary } from '@/components/NetworkErrorBoundary';
 import { Card } from '@/components/ui/card';
 import { FilmStrip, MagnifyingGlass, Warning } from '@phosphor-icons/react';
 
 function App() {
+  const { isOnline, isApiReachable, checkConnection } = useConnectionStatus();
   const [allMovies, setAllMovies] = useState<Movie[]>([]);
   const [filteredMovies, setFilteredMovies] = useState<Movie[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -29,6 +34,11 @@ function App() {
     minRating: 0
   });
 
+  // Monitor connection status and show/hide connection status component
+  useEffect(() => {
+    setShowConnectionStatus(!isOnline || !isApiReachable);
+  }, [isOnline, isApiReachable]);
+
   const handleSearch = async (query: string) => {
     if (!query) {
       setAllMovies([]);
@@ -36,6 +46,20 @@ function App() {
       setHasSearched(false);
       setError(null);
       setShowConnectionStatus(false);
+      return;
+    }
+
+    // Check if we're offline
+    if (!isOnline) {
+      setError('No internet connection. Please check your network and try again.');
+      setShowConnectionStatus(true);
+      return;
+    }
+
+    // Check if API is reachable
+    if (!isApiReachable) {
+      setError('Movie database is currently unavailable. Please try again later.');
+      setShowConnectionStatus(true);
       return;
     }
 
@@ -63,13 +87,22 @@ function App() {
           result.Error.includes('Network') ||
           result.Error.includes('connection') ||
           result.Error.includes('timeout') ||
-          result.Error.includes('Failed to fetch')
+          result.Error.includes('Failed to fetch') ||
+          result.Error.includes('internet') ||
+          result.Error.includes('unavailable') ||
+          result.Error.includes('Connection timeout')
         )) {
           setShowConnectionStatus(true);
         }
       }
     } catch (err) {
-      const errorMessage = 'Failed to search movies. Please check your connection and try again.';
+      console.error('Search error:', err);
+      const errorMessage = err instanceof Error 
+        ? err.message.includes('fetch') || err.message.includes('Network')
+          ? 'Unable to connect to the movie database. Please check your internet connection.'
+          : 'Failed to search movies. Please try again later.'
+        : 'Failed to search movies. Please try again later.';
+      
       setError(errorMessage);
       setAllMovies([]);
       setFilteredMovies([]);
@@ -119,7 +152,10 @@ function App() {
     }
   };
 
-  const handleRetrySearch = () => {
+  const handleRetrySearch = async () => {
+    // Force a connection check before retrying
+    await checkConnection();
+    
     if (lastSearchQuery) {
       handleSearch(lastSearchQuery);
     }
@@ -149,16 +185,20 @@ function App() {
 
   if (selectedMovieId) {
     return (
-      <MovieDetailsView
-        imdbID={selectedMovieId}
-        onBack={handleBackToSearch}
-      />
+      <NetworkErrorBoundary>
+        <MovieDetailsView
+          imdbID={selectedMovieId}
+          onBack={handleBackToSearch}
+        />
+      </NetworkErrorBoundary>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
+    <NetworkErrorBoundary>
+      <div className="min-h-screen bg-background">
+        <NetworkIndicator />
+        <div className="container mx-auto px-4 py-8">
         <header className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-4">
             <FilmStrip className="w-8 h-8 text-accent" />
@@ -172,6 +212,8 @@ function App() {
         <div className="mb-8">
           <SearchBar onSearch={handleSearch} isLoading={isLoading} />
         </div>
+
+        <OfflineNotice onRetry={handleRetrySearch} />
 
         <ConnectionStatus
           isVisible={showConnectionStatus}
@@ -221,8 +263,9 @@ function App() {
           onMovieClick={handleMovieClick}
           isLoading={isLoading || isFiltering}
         />
+        </div>
       </div>
-    </div>
+    </NetworkErrorBoundary>
   );
 }
 
