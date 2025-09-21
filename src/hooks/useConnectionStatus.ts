@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { movieApi } from '@/lib/movieApi';
 
 interface UseConnectionStatusReturn {
@@ -7,6 +7,7 @@ interface UseConnectionStatusReturn {
   lastChecked: Date | null;
   checkConnection: () => Promise<void>;
   isChecking: boolean;
+  connectionQuality: 'good' | 'poor' | 'offline';
 }
 
 export function useConnectionStatus(): UseConnectionStatusReturn {
@@ -14,44 +15,91 @@ export function useConnectionStatus(): UseConnectionStatusReturn {
   const [isApiReachable, setIsApiReachable] = useState(true);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<'good' | 'poor' | 'offline'>('good');
+  const checkingRef = useRef(false);
+  const failureCountRef = useRef(0);
 
   const checkConnection = useCallback(async () => {
-    if (isChecking) return;
+    if (checkingRef.current) return;
     
+    checkingRef.current = true;
     setIsChecking(true);
+    
     try {
+      const startTime = Date.now();
       const apiStatus = await movieApi.testConnection();
-      setIsApiReachable(apiStatus);
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+      
+      if (apiStatus) {
+        setIsApiReachable(true);
+        failureCountRef.current = 0;
+        
+        // Determine connection quality based on response time
+        if (responseTime < 2000) {
+          setConnectionQuality('good');
+        } else if (responseTime < 5000) {
+          setConnectionQuality('poor');
+        } else {
+          setConnectionQuality('poor');
+        }
+      } else {
+        setIsApiReachable(false);
+        failureCountRef.current++;
+        setConnectionQuality('offline');
+      }
+      
       setLastChecked(new Date());
     } catch (error) {
+      console.warn('Connection check failed:', error);
       setIsApiReachable(false);
+      failureCountRef.current++;
+      setConnectionQuality('offline');
       setLastChecked(new Date());
     } finally {
       setIsChecking(false);
+      checkingRef.current = false;
     }
-  }, [isChecking]);
+  }, []);
+
+  // Force reset connection status
+  const resetConnection = useCallback(() => {
+    setIsApiReachable(true);
+    setConnectionQuality('good');
+    failureCountRef.current = 0;
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
+      console.log('Browser detected online status');
       setIsOnline(true);
-      // Check API when coming back online
-      checkConnection();
+      resetConnection();
+      // Check API when coming back online with a small delay
+      setTimeout(() => {
+        checkConnection();
+      }, 1000);
     };
 
     const handleOffline = () => {
+      console.log('Browser detected offline status');
       setIsOnline(false);
       setIsApiReachable(false);
+      setConnectionQuality('offline');
     };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Initial check
-    checkConnection();
+    // Initial check with delay to allow app to settle
+    setTimeout(() => {
+      checkConnection();
+    }, 500);
 
-    // Periodic health check every 30 seconds when online
+    // Adaptive health check interval based on failure count
     const healthCheckInterval = setInterval(() => {
       if (navigator.onLine) {
+        // More frequent checks if we've had failures
+        const interval = failureCountRef.current > 0 ? 15000 : 45000;
         checkConnection();
       }
     }, 30000);
@@ -61,13 +109,14 @@ export function useConnectionStatus(): UseConnectionStatusReturn {
       window.removeEventListener('offline', handleOffline);
       clearInterval(healthCheckInterval);
     };
-  }, [checkConnection]);
+  }, [checkConnection, resetConnection]);
 
   return {
     isOnline,
     isApiReachable,
     lastChecked,
     checkConnection,
-    isChecking
+    isChecking,
+    connectionQuality
   };
 }

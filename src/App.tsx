@@ -8,7 +8,7 @@ import { MovieGrid } from '@/components/MovieGrid';
 import { MovieDetailsView } from '@/components/MovieDetailsView';
 import { MovieFilters as MovieFiltersComponent } from '@/components/MovieFilters';
 import { FilterProgress } from '@/components/FilterProgress';
-import { ConnectionStatus } from '@/components/ConnectionStatus';
+import { ConnectionRecovery } from '@/components/ConnectionRecovery';
 import { NetworkIndicator } from '@/components/NetworkIndicator';
 import { OfflineNotice } from '@/components/OfflineNotice';
 import { NetworkErrorBoundary } from '@/components/NetworkErrorBoundary';
@@ -26,7 +26,6 @@ function App() {
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [showConnectionStatus, setShowConnectionStatus] = useState(false);
   const [lastSearchQuery, setLastSearchQuery] = useState<string>('');
   const [currentFilters, setCurrentFilters] = useState<MovieFilters>({
     genre: '',
@@ -36,7 +35,7 @@ function App() {
 
   // Monitor connection status and show/hide connection status component
   useEffect(() => {
-    setShowConnectionStatus(!isOnline || !isApiReachable);
+    // Connection status is now handled by ConnectionRecovery component
   }, [isOnline, isApiReachable]);
 
   const handleSearch = async (query: string) => {
@@ -45,21 +44,18 @@ function App() {
       setFilteredMovies([]);
       setHasSearched(false);
       setError(null);
-      setShowConnectionStatus(false);
       return;
     }
 
     // Check if we're offline
     if (!isOnline) {
       setError('No internet connection. Please check your network and try again.');
-      setShowConnectionStatus(true);
       return;
     }
 
     // Check if API is reachable
     if (!isApiReachable) {
       setError('Movie database is currently unavailable. Please try again later.');
-      setShowConnectionStatus(true);
       return;
     }
 
@@ -67,7 +63,6 @@ function App() {
     setError(null);
     setHasSearched(true);
     setLastSearchQuery(query);
-    setShowConnectionStatus(false);
 
     try {
       const result = await movieApi.searchMovies(query);
@@ -76,24 +71,10 @@ function App() {
         setAllMovies(result.Search);
         // Apply current filters to new search results
         await applyFilters(result.Search, currentFilters);
-        setShowConnectionStatus(false);
       } else {
         setAllMovies([]);
         setFilteredMovies([]);
         setError(result.Error || 'No movies found');
-        
-        // Show connection status if it looks like a network error
-        if (result.Error && (
-          result.Error.includes('Network') ||
-          result.Error.includes('connection') ||
-          result.Error.includes('timeout') ||
-          result.Error.includes('Failed to fetch') ||
-          result.Error.includes('internet') ||
-          result.Error.includes('unavailable') ||
-          result.Error.includes('Connection timeout')
-        )) {
-          setShowConnectionStatus(true);
-        }
       }
     } catch (err) {
       console.error('Search error:', err);
@@ -106,7 +87,6 @@ function App() {
       setError(errorMessage);
       setAllMovies([]);
       setFilteredMovies([]);
-      setShowConnectionStatus(true);
     } finally {
       setIsLoading(false);
     }
@@ -215,10 +195,7 @@ function App() {
 
         <OfflineNotice onRetry={handleRetrySearch} />
 
-        <ConnectionStatus
-          isVisible={showConnectionStatus}
-          onRetry={handleRetrySearch}
-        />
+        <ConnectionRecovery onRetry={handleRetrySearch} />
 
         <MovieFiltersComponent
           onFiltersChange={handleFiltersChange}
