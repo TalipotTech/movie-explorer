@@ -43,3 +43,9 @@ export interface SearchResponse {
   Response: string;
   Error?: string;
 }
+
+export interface MovieFilters {
+  genre: string;
+  yearRange: { min: number; max: number };
+  minRating: number;
+}

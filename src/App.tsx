@@ -1,22 +1,35 @@
-import { useState } from 'react';
-import { Movie } from '@/lib/types';
+import { useState, useEffect } from 'react';
+import { Movie, type MovieFilters } from '@/lib/types';
 import { movieApi } from '@/lib/movieApi';
+import { smartMovieFilter } from '@/lib/movieFilter';
 import { SearchBar } from '@/components/SearchBar';
 import { MovieGrid } from '@/components/MovieGrid';
 import { MovieDetailsView } from '@/components/MovieDetailsView';
+import { MovieFilters as MovieFiltersComponent } from '@/components/MovieFilters';
+import { FilterProgress } from '@/components/FilterProgress';
 import { Card } from '@/components/ui/card';
 import { FilmStrip, MagnifyingGlass } from '@phosphor-icons/react';
 
 function App() {
-  const [movies, setMovies] = useState<Movie[]>([]);
+  const [allMovies, setAllMovies] = useState<Movie[]>([]);
+  const [filteredMovies, setFilteredMovies] = useState<Movie[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [filterProgress, setFilterProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
   const [selectedMovieId, setSelectedMovieId] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [currentFilters, setCurrentFilters] = useState<MovieFilters>({
+    genre: '',
+    yearRange: { min: 1900, max: new Date().getFullYear() },
+    minRating: 0
+  });
 
   const handleSearch = async (query: string) => {
     if (!query) {
-      setMovies([]);
+      setAllMovies([]);
+      setFilteredMovies([]);
       setHasSearched(false);
       setError(null);
       return;
@@ -30,18 +43,76 @@ function App() {
       const result = await movieApi.searchMovies(query);
       
       if (result.Response === 'True' && result.Search) {
-        setMovies(result.Search);
+        setAllMovies(result.Search);
+        // Apply current filters to new search results
+        await applyFilters(result.Search, currentFilters);
       } else {
-        setMovies([]);
+        setAllMovies([]);
+        setFilteredMovies([]);
         setError(result.Error || 'No movies found');
       }
     } catch (err) {
       setError('Failed to search movies. Please try again.');
-      setMovies([]);
+      setAllMovies([]);
+      setFilteredMovies([]);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const applyFilters = async (movies: Movie[], filters: MovieFilters) => {
+    if (!movies.length) {
+      setFilteredMovies([]);
+      return;
+    }
+
+    // Check if any advanced filters are applied
+    const hasAdvancedFilters = filters.genre || filters.minRating > 0;
+    
+    if (!hasAdvancedFilters) {
+      // Only apply basic year filter
+      const yearFiltered = movies.filter(movie => {
+        const year = parseInt(movie.Year.split('-')[0]);
+        return year >= filters.yearRange.min && year <= filters.yearRange.max;
+      });
+      setFilteredMovies(yearFiltered);
+      return;
+    }
+
+    // Apply advanced filters with progress tracking
+    setIsFiltering(true);
+    setFilterProgress({ current: 0, total: movies.length });
+
+    try {
+      const filtered = await smartMovieFilter.filterMovies(
+        movies,
+        filters,
+        (current, total) => {
+          setFilterProgress({ current, total });
+        }
+      );
+      setFilteredMovies(filtered);
+    } catch (error) {
+      console.error('Error applying filters:', error);
+      setFilteredMovies(movies); // Fallback to unfiltered results
+    } finally {
+      setIsFiltering(false);
+    }
+  };
+
+  const handleFiltersChange = async (filters: MovieFilters) => {
+    setCurrentFilters(filters);
+    if (allMovies.length > 0) {
+      await applyFilters(allMovies, filters);
+    }
+  };
+
+  // Apply filters when movies or filters change
+  useEffect(() => {
+    if (allMovies.length > 0) {
+      applyFilters(allMovies, currentFilters);
+    }
+  }, []); // Only run on mount, manual calls handle updates
 
   const handleMovieClick = (movie: Movie) => {
     setSelectedMovieId(movie.imdbID);
@@ -77,6 +148,18 @@ function App() {
           <SearchBar onSearch={handleSearch} isLoading={isLoading} />
         </div>
 
+        <MovieFiltersComponent
+          onFiltersChange={handleFiltersChange}
+          isVisible={showFilters}
+          onToggle={() => setShowFilters(!showFilters)}
+        />
+
+        <FilterProgress
+          current={filterProgress.current}
+          total={filterProgress.total}
+          isVisible={isFiltering}
+        />
+
         {!hasSearched && !isLoading && (
           <Card className="p-12 text-center bg-card/50">
             <MagnifyingGlass className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
@@ -93,18 +176,18 @@ function App() {
           </Card>
         )}
 
-        {hasSearched && movies.length === 0 && !error && !isLoading && (
+        {hasSearched && filteredMovies.length === 0 && !error && !isLoading && !isFiltering && (
           <Card className="p-8 text-center">
             <p className="text-muted-foreground">
-              No movies found. Try searching with different keywords.
+              No movies found matching your criteria. Try adjusting your filters or search terms.
             </p>
           </Card>
         )}
 
         <MovieGrid
-          movies={movies}
+          movies={filteredMovies}
           onMovieClick={handleMovieClick}
-          isLoading={isLoading}
+          isLoading={isLoading || isFiltering}
         />
       </div>
     </div>
